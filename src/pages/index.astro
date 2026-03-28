@@ -6,12 +6,201 @@
 	<head>
 		<meta charset="utf-8" />
 		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-		<meta name="viewport" content="width=device-width" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta name="generator" content={Astro.generator} />
-		<title>Mona Mayhem</title>
+		<title>Mona Mayhem - GitHub Contribution Battle Arena</title>
+		<style>
+			body {
+				background: #0f172a;
+				color: #e2e8f0;
+				font-family: Inter, system-ui, -apple-system, Segoe UI, sans-serif;
+				margin: 0;
+				padding: 2rem 1rem;
+				min-height: 100vh;
+			}
+
+			.container {
+				max-width: 760px;
+				margin: 0 auto;
+				background: #1e293b;
+				border: 1px solid #334155;
+				border-radius: 12px;
+				padding: 1.2rem;
+				box-shadow: 0 8px 24px rgba(15, 23, 42, 0.45);
+			}
+
+			h1 {
+				margin: 0 0 0.6rem;
+				font-size: clamp(1.5rem, 2.8vw, 2.25rem);
+				color: #f8fafc;
+			}
+
+			label {
+				display: block;
+				font-weight: 600;
+				margin-bottom: 0.3rem;
+			}
+
+			input[type="text"] {
+				width: 100%;
+				padding: 0.55rem 0.7rem;
+				border: 1px solid #475569;
+				border-radius: 8px;
+				background: #0f172a;
+				color: #e2e8f0;
+				margin-bottom: 1rem;
+			}
+
+			button {
+				width: 100%;
+				padding: 0.7rem;
+				border: 0;
+				border-radius: 8px;
+				background: #14b8a6;
+				color: #0f172a;
+				font-weight: 700;
+				cursor: pointer;
+				transition: transform 0.1s ease, filter 0.2s ease;
+			}
+
+			button:hover {
+				filter: brightness(1.1);
+			}
+
+			button:disabled {
+				opacity: 0.55;
+				cursor: not-allowed;
+			}
+
+			.results {
+				background: #0f172a;
+				border: 1px solid #334155;
+				border-radius: 10px;
+				padding: 0.9rem;
+				min-height: 120px;
+			}
+
+			.status {
+				margin: 0.2rem 0;
+				font-size: 0.95rem;
+			}
+
+			.success {
+				color: #a3e635;
+			}
+
+			.error {
+				color: #f97316;
+			}
+
+			@media (min-width: 640px) {
+				input[type="text"], button {
+					max-width: 100%;
+				}
+			}
+		</style>
 	</head>
 	<body>
-		<h1>Mona Mayhem</h1>
-		<p>Welcome to Mona Mayhem! Time to build a GitHub Contribution Battle Arena.</p>
+		<div class="container" role="main">
+			<h1>Mona Mayhem</h1>
+			<p>GitHub Contribution Battle Arena</p>
+
+			<form id="battle-form" onsubmit="return false">
+				<div>
+					<label for="player1">Player 1 username</label>
+					<input id="player1" name="player1" type="text" placeholder="e.g. octocat" autocomplete="off" required />
+				</div>
+				<div>
+					<label for="player2">Player 2 username</label>
+					<input id="player2" name="player2" type="text" placeholder="e.g. github" autocomplete="off" required />
+				</div>
+				<button id="battle-button" type="button">Battle!</button>
+			</form>
+
+			<div class="results" id="results">
+				<p class="status" id="status">Enter two usernames and start the battle.</p>
+				<div id="summary"></div>
+			</div>
+		</div>
+
+		<script>
+			const getContributionScore = (data) => {
+				if (!data || typeof data !== 'object') return 0;
+				if (typeof data.total === 'number') return data.total;
+				if (data.contributions && typeof data.contributions.total === 'number') return data.contributions.total;
+				return 0;
+			};
+
+			const statusEl = document.getElementById('status');
+			const summaryEl = document.getElementById('summary');
+			const player1El = document.getElementById('player1');
+			const player2El = document.getElementById('player2');
+			const battleBtn = document.getElementById('battle-button');
+
+			const setStatus = (message, type = '') => {
+				statusEl.textContent = message;
+				statusEl.className = 'status';
+				if (type) statusEl.classList.add(type);
+			};
+
+			const renderSummary = (p1, score1, p2, score2) => {
+				summaryEl.innerHTML = `
+					<p><strong>${p1}</strong>: ${score1.toLocaleString()}</p>
+					<p><strong>${p2}</strong>: ${score2.toLocaleString()}</p>
+				`;
+			};
+
+			const startBattle = async () => {
+				const player1 = player1El.value.trim();
+				const player2 = player2El.value.trim();
+
+				if (!player1 || !player2) {
+					setStatus('Both player names are required!', 'error');
+					return;
+				}
+
+				if (player1.toLowerCase() === player2.toLowerCase()) {
+					setStatus('Please enter two different usernames for a battle.', 'error');
+					return;
+				}
+
+				battleBtn.disabled = true;
+				setStatus('Fetching contributions…', '');
+				summaryEl.innerHTML = '';
+
+				try {
+					const endpoints = [player1, player2].map((u) => `/api/contributions/${encodeURIComponent(u)}`);
+					const responses = await Promise.all(endpoints.map((url) => fetch(url)));
+
+					for (let i = 0; i < responses.length; i++) {
+						if (!responses[i].ok) {
+							const error = await responses[i].json().catch(() => ({}));
+							throw new Error(error.error || `Failed to load ${i === 0 ? 'Player 1' : 'Player 2'} data`);
+						}
+					}
+
+					const [data1, data2] = await Promise.all(responses.map((res) => res.json()));
+					const score1 = getContributionScore(data1);
+					const score2 = getContributionScore(data2);
+
+					renderSummary(player1, score1, player2, score2);
+
+					if (score1 > score2) {
+						setStatus(`${player1} wins!`, 'success');
+					} else if (score2 > score1) {
+						setStatus(`${player2} wins!`, 'success');
+					} else {
+						setStatus('It’s a tie!', 'success');
+					}
+				} catch (err) {
+					console.error(err);
+					setStatus((err && err.message) || 'Unable to complete battle.', 'error');
+				} finally {
+					battleBtn.disabled = false;
+				}
+			};
+
+			battleBtn.addEventListener('click', startBattle);
+		</script>
 	</body>
 </html>
